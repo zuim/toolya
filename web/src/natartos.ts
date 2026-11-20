@@ -178,7 +178,8 @@ export async function installFromRelease(
     await setSelinux(adb, "permissive");
   }
   log("remounting /vendor rw…");
-  await run(adb, "mount -o remount,rw /vendor");
+  await vendorRw(adb);
+  try {
   await run(adb, `mkdir -p ${shq(nc.stock_dir)}`);
   for (const p of backups) {
     const base = p.split("/").pop();
@@ -222,10 +223,20 @@ export async function installFromRelease(
   }
 
   await run(adb, `rm -f ${nc.bootcount} ${nc.status} ${nc.disabled}`);
-  await run(adb, "sync");
+  } finally { await vendorRo(adb); }
 
   log(`natartos ${manifest.natartos_version ?? ""} installed (${chosen.length + customPlan.length} mod(s)) — activating…`);
   return chosen.map((m) => m.id);
+}
+
+/** /vendor is rw only while we write: a kernel crash or power loss while it is
+ *  mounted rw is the one way these writes could damage boot files. Callers wrap
+ *  their writes in try { await vendorRw(adb); … } finally { await vendorRo(adb); }. */
+async function vendorRw(adb: Adb): Promise<void> {
+  await run(adb, "mount -o remount,rw /vendor");
+}
+async function vendorRo(adb: Adb): Promise<void> {
+  try { await run(adb, "sync; mount -o remount,ro /vendor"); } catch { /* best effort */ }
 }
 
 /** Start mods on the device — runs inject.sh without reinstalling. */
@@ -305,8 +316,8 @@ export async function uninstallNatartos(adb: Adb, log: (s: string) => void): Pro
     log("SELinux is enforcing — switching to permissive…");
     await setSelinux(adb, "permissive");
   }
-  await run(adb, "mount -o remount,rw /vendor");
-
+  await vendorRw(adb);
+  try {
   // Read the applied manifest to restore the exact backed-up files.
   let applied: Manifest | null = null;
   try { applied = JSON.parse((await run(adb, `cat ${nc.manifest_device} 2>/dev/null`)).trim()) as Manifest; }
@@ -332,6 +343,7 @@ export async function uninstallNatartos(adb: Adb, log: (s: string) => void): Pro
   await run(adb, "rm -f /vendor/etc/init/persist_adb.rc");
   await run(adb, `rm -f ${nc.bootcount} ${nc.status} ${nc.disabled}`);
   await run(adb, "rm -f /data/.natartos_* /data/local/tmp/fb_* /data/local/tmp/natartos* /data/local/tmp/vidplane /data/local/tmp/screencap.bin 2>/dev/null; sync");
+  } finally { await vendorRo(adb); }
   log("natartos removed — reboot the goggles to return to fully stock.");
 }
 
@@ -345,12 +357,14 @@ export async function applyBackground(adb: Adb, jpeg: Uint8Array, log: (s: strin
   if (has !== "y") throw new Error("the Custom Background mod (hook_bitmap) isn't installed — reinstall natartos including it");
   const sel = await getSelinux(adb);
   if (!sel.toLowerCase().startsWith("perm")) { log("SELinux is enforcing — switching to permissive…"); await setSelinux(adb, "permissive"); }
-  await run(adb, "mount -o remount,rw /vendor");
-  await run(adb, "mkdir -p /vendor/custom/extern_bitmap");
-  log("writing background…");
-  await pushFile(adb, "/vendor/custom/extern_bitmap/background_disconnect.jpg", jpeg);
-  await run(adb, "touch /data/local/tmp/natartos_background");
-  await run(adb, "touch /vendor/natartos/enabled/hook_bitmap.so");
+  await vendorRw(adb);
+  try {
+    await run(adb, "mkdir -p /vendor/custom/extern_bitmap");
+    log("writing background…");
+    await pushFile(adb, "/vendor/custom/extern_bitmap/background_disconnect.jpg", jpeg);
+    await run(adb, "touch /data/local/tmp/natartos_background");
+    await run(adb, "touch /vendor/natartos/enabled/hook_bitmap.so");
+  } finally { await vendorRo(adb); }
   log("background set — restarting mods so it takes effect…");
   await startMods(adb, log);
 }
@@ -359,10 +373,12 @@ export async function applyBackground(adb: Adb, jpeg: Uint8Array, log: (s: strin
  *  Takes effect when mods are next (re)started. */
 export async function setModEnabled(adb: Adb, file: string, on: boolean): Promise<void> {
   if (!/^[A-Za-z0-9._-]+\.so$/.test(file)) throw new Error(`invalid mod file: ${file}`);
-  await run(adb, "mount -o remount,rw /vendor");
   const flag = shq(`/vendor/natartos/enabled/${file}`);
-  if (on) await run(adb, `touch ${flag}`);
-  else await run(adb, `rm -f ${flag}`);
+  await vendorRw(adb);
+  try {
+    if (on) await run(adb, `touch ${flag}`);
+    else await run(adb, `rm -f ${flag}`);
+  } finally { await vendorRo(adb); }
 }
 
 const FREEDOOM_ZIP = "https://github.com/freedoom/freedoom/releases/download/v0.13.0/freedoom-0.13.0.zip";
@@ -379,9 +395,11 @@ export async function downloadDoomWad(
   const wad = await extractFromZip(zip, /freedoom1\.wad$/i);
   if (!wad) throw new Error("freedoom1.wad not found in archive");
   log(`pushing freedoom1.wad (${(wad.byteLength / 1048576).toFixed(1)} MB)…`);
-  await run(adb, "mount -o remount,rw /vendor");
-  await run(adb, `mkdir -p ${shq(parentDir(DOOM_WAD_PATH))}`);
-  await pushFile(adb, DOOM_WAD_PATH, wad);
+  await vendorRw(adb);
+  try {
+    await run(adb, `mkdir -p ${shq(parentDir(DOOM_WAD_PATH))}`);
+    await pushFile(adb, DOOM_WAD_PATH, wad);
+  } finally { await vendorRo(adb); }
   log("Doom WAD installed");
 }
 
@@ -401,9 +419,11 @@ export async function pushDoomWad(
   log: (s: string) => void,
 ): Promise<void> {
   log(`pushing WAD (${(bytes.byteLength / 1048576).toFixed(1)} MB)…`);
-  await run(adb, "mount -o remount,rw /vendor");
-  await run(adb, `mkdir -p ${shq(parentDir(DOOM_WAD_PATH))}`);
-  await pushFile(adb, DOOM_WAD_PATH, bytes);
+  await vendorRw(adb);
+  try {
+    await run(adb, `mkdir -p ${shq(parentDir(DOOM_WAD_PATH))}`);
+    await pushFile(adb, DOOM_WAD_PATH, bytes);
+  } finally { await vendorRo(adb); }
   log("WAD installed");
 }
 

@@ -1156,6 +1156,9 @@ fn cmd_install(confirmed: bool, local_dir: Option<&Path>, version: Option<&str>,
     // clear stale anti-brick state
     let _ = shell(&mut dev, &format!("rm -f {BOOTCOUNT_PATH} {STATUS_PATH} {DISABLED_PATH}"));
     let _ = shell(&mut dev, "sync");
+    // /vendor back to read-only right away: a kernel crash or power loss while
+    // it is rw (e.g. during mod activation below) is the one way to damage it.
+    let _ = shell(&mut dev, "sync; mount -o remount,ro /vendor");
 
     // Activate immediately: init won't see the new .rc until reboot,
     // so stop stock dji_glasses and run inject.sh now.
@@ -1257,7 +1260,7 @@ fn cmd_uninstall(confirmed: bool) {
     let _ = shell(&mut dev, "rm -f /vendor/etc/init/persist_adb.rc");
     let _ = shell(&mut dev, &format!("rm -f {BOOTCOUNT_PATH} {STATUS_PATH} {DISABLED_PATH}"));
     let _ = shell(&mut dev, &format!("rm -f {LOG_PATH}"));
-    let _ = shell(&mut dev, "sync");
+    let _ = shell(&mut dev, "sync; mount -o remount,ro /vendor");
 
     println!("\n=== natartos removed, stock restored ===");
     println!("Reboot to return to fully stock goggles.");
