@@ -483,6 +483,34 @@ footer b{color:var(--fg);font-weight:600}
               <p class="hint">Stream your PC screen to the goggles over USB. <code>fb_receiver</code> is pushed automatically; JPEG frames go through the ADB connection. Needs the natartos <b>display hook</b> for fb_shared inject.</p>
             </div>
           </details>
+          <details class="card" id="eyepiece-card">
+            <summary>Eyepiece stream <span class="state" id="ep-status">connect ADB first</span></summary>
+            <div class="details-body">
+              <div class="row" style="flex-wrap:wrap;gap:8px">
+                <label style="font-size:12px;display:flex;align-items:center;gap:6px">
+                  FPS <select class="field" id="ep-fps" style="width:auto">
+                    <option value="60">60</option>
+                    <option value="100" selected>100 (panel rate)</option>
+                  </select>
+                </label>
+                <label style="font-size:12px;display:flex;align-items:center;gap:6px">
+                  Bitrate <select class="field" id="ep-br" style="width:auto">
+                    <option value="10000000">10 Mbit/s</option>
+                    <option value="20000000" selected>20 Mbit/s</option>
+                    <option value="30000000">30 Mbit/s</option>
+                  </select>
+                </label>
+                <label style="font-size:12px;display:flex;align-items:center;gap:6px">
+                  <input type="checkbox" id="ep-metrics"> display timing log
+                </label>
+              </div>
+              <div class="row" style="justify-content:space-between;font-size:12px;color:var(--fg-dim)">
+                <span id="ep-stats"></span>
+                <button class="btn tonal" id="ep-stream" type="button" disabled>Start Eyepiece</button>
+              </div>
+              <p class="hint">Low-latency H.264: browser screen capture → WebCodecs hardware encoder → <code>eyepiece_bridge</code> on the goggles (hardware decode, direct scan-out). Needs the natartos <b>eyepiece</b> and <b>overlay</b> mods. Chromium only.</p>
+            </div>
+          </details>
           <details class="card" hidden>
             <summary>Boot splash <span class="state">needs the splash mod</span></summary>
             <div class="details-body">

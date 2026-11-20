@@ -8,6 +8,7 @@ import { connectAdb, readUsage, run, runInDir, setUsbMode, usbCfgString, setSeli
 import { toScreenJpeg, previewInto, bgraToCanvas } from "./image";
 import { startStream, type StreamHandle } from "./stream";
 import { startPcStream, type PcStreamHandle } from "./pc-stream";
+import { startEyepiece, type EyepieceHandle } from "./eyepiece";
 import { sendKey, holdKey } from "./input";
 import type { Adb } from "@yume-chan/adb";
 
@@ -300,6 +301,8 @@ async function doConnect() {
     setDpad(true);
     btn("scr-grab", false);
     btn("ps-stream", false);
+    btn("ep-stream", false);
+    $("ep-status").textContent = "ready";
     if (bgJpeg) btn("bg-apply", false);
     void startTerminal(adb);
     startHeartbeat();
@@ -948,6 +951,7 @@ async function disconnect() {
   stopHeartbeat();
   // Stop PC Stream before closing adb — it must touch fb_stop over the live link.
   if (pcStream?.active) { try { await pcStream.stop(); } catch { /* ignore */ } }
+  if (eyepiece?.active) { try { await eyepiece.stop("disconnect"); } catch { /* ignore */ } }
   try { term?.dispose(); } catch { /* ignore */ }
   term = null;
   $("term").innerHTML = "";
@@ -969,6 +973,8 @@ async function disconnect() {
   setDpad(false);
   btn("scr-grab", true);
   btn("ps-stream", true);
+  btn("ep-stream", true);
+  $("ep-status").textContent = "connect ADB first";
   btn("bg-apply", true);
   btn("nat-start", true);
   btn("nat-noverity", true);
@@ -1058,6 +1064,43 @@ function startTerminal(adb: Adb) {
 
 // --- PC Stream (browser → goggles over USB/ADB) ---
 let pcStream: PcStreamHandle | null = null;
+let eyepiece: EyepieceHandle | null = null;
+
+$("ep-stream").addEventListener("click", async () => {
+  const b = $("ep-stream") as HTMLButtonElement;
+  if (eyepiece?.active) { await eyepiece.stop(); return; }
+  if (!adb) { log("eyepiece: connect ADB first"); return; }
+  b.textContent = "Stop Eyepiece";
+  $("ep-status").textContent = "starting…";
+  try {
+    eyepiece = await startEyepiece({
+      adb,
+      fps: parseInt(($("ep-fps") as HTMLSelectElement).value),
+      bitrate: parseInt(($("ep-br") as HTMLSelectElement).value),
+      metrics: ($("ep-metrics") as HTMLInputElement).checked,
+      onLog: (l) => log(l),
+      onStatus: (s) => {
+        const f = (v: number) => Number.isFinite(v) ? v.toFixed(1) : "–";
+        $("ep-status").textContent = "streaming";
+        $("ep-stats").textContent =
+          `${s.fps.toFixed(0)} fps · ${s.mbps.toFixed(1)} Mbit/s · send→shown ${f(s.sendToShownP50)}/${f(s.sendToShownP95)} ms` +
+          (s.captureToSendP50 !== null ? ` · capture→send ${f(s.captureToSendP50)} ms` : "") +
+          ` · enc ${f(s.encodeP50)} · dec ${f(s.decodeP50)} ms · drop ${s.dropped}+${s.encDropped}`;
+        log(`eyepiece: ${$("ep-stats").textContent}`);
+      },
+      onStop: (reason) => {
+        log(`eyepiece: ${reason}`);
+        $("ep-status").textContent = "stopped";
+        b.textContent = "Start Eyepiece";
+        eyepiece = null;
+      },
+    });
+  } catch (e) {
+    log(`eyepiece: ${(e as Error).message}`);
+    $("ep-status").textContent = "error";
+    b.textContent = "Start Eyepiece";
+  }
+});
 
 const psQuality = $("ps-quality") as HTMLInputElement;
 const psFpsSlider = $("ps-fps") as HTMLInputElement;
