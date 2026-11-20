@@ -131,7 +131,7 @@ impl Goggles {
     /// the live DUML interface; the WMS cmd_set 0x07 candidate scan runs on it.
     /// If no pipe answers, report a precise diagnosis instead of firing unknown
     /// commands at the device.
-    pub fn run_enable(&self, plan: &EnablePlan, log: impl Fn(&str)) -> Result<(), String> {
+    pub fn run_enable(&self, plan: &EnablePlan, scan: bool, require_fw: Option<&str>, log: impl Fn(&str)) -> Result<(), String> {
         let mut any_data = false;
         let mut version: Option<String> = None;
         for pipe in &self.pipes {
@@ -152,7 +152,14 @@ impl Goggles {
             if contains_subslice(&blob, &plan.expect) {
                 log(&format!("handshake ok (iface {})", pipe.iface_num));
                 if let Some(v) = &version { log(&format!("device: {v}")); }
-                return enable(&iface, pipe, plan, &log);
+                if let Some(want) = require_fw {
+                    match &version {
+                        Some(v) if v.contains(want) => {}
+                        Some(v) => return Err(format!("firmware check failed: device reports '{v}', expected it to contain '{want}' — nothing sent")),
+                        None => return Err(format!("firmware check failed: could not read firmware version from the handshake (wanted '{want}') — nothing sent")),
+                    }
+                }
+                return enable(&iface, pipe, plan, scan, &log);
             }
             log(&format!("iface {}: no </dji>", pipe.iface_num));
         }
@@ -254,7 +261,7 @@ fn handshake(iface: &nusb::Interface, pipe: &Pipe, plan: &EnablePlan) -> Vec<u8>
 /// Enable adb on this (handshake-confirmed) pipe. Primary: one packet with the
 /// empirically-confirmed cmd_id 0x64, waiting ~5s for the re-enumeration. If
 /// that doesn't switch (other firmware), fall back to the full 0x60–0x6F scan.
-fn enable(iface: &nusb::Interface, pipe: &Pipe, plan: &EnablePlan, log: &impl Fn(&str)) -> Result<(), String> {
+fn enable(iface: &nusb::Interface, pipe: &Pipe, plan: &EnablePlan, scan_fallback: bool, log: &impl Fn(&str)) -> Result<(), String> {
     std::thread::sleep(std::time::Duration::from_millis(200));
     drain(iface, pipe.ep_in);
     let cid = plan.enable[10];
@@ -262,6 +269,9 @@ fn enable(iface: &nusb::Interface, pipe: &Pipe, plan: &EnablePlan, log: &impl Fn
     if send_and_wait(iface, pipe, &plan.enable, ENABLE_WAIT_MS, log) {
         log("adb enabling — goggles re-enumerate in ~5s. Then `adb devices`.");
         return Ok(());
+    }
+    if !scan_fallback {
+        return Err(format!("cmd_id 0x{cid:02x} did not switch and --no-scan is set — no other commands were sent"));
     }
     log(&format!("cmd_id 0x{cid:02x} did not switch — scanning 0x60–0x6F…"));
     scan(iface, pipe, plan, log)

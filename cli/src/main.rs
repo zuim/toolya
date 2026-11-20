@@ -36,7 +36,9 @@ fn usage() {
     eprintln!("toolya {} — https://toolya.dev\n", env!("CARGO_PKG_VERSION"));
     eprintln!("usage: toolya <command> [args]\n");
     eprintln!("  duml-show adb-enable    print raw DUML packet (no hardware)");
-    eprintln!("  adb --yes [--no-telemetry]  enable ADB/root over USB");
+    eprintln!("  adb --yes [--no-telemetry] [--no-scan] [--require-fw <substr>]  enable ADB/root over USB");
+    eprintln!("      --no-scan       send only the primary cmd_id (0x64), never scan 0x60-0x6F");
+    eprintln!("      --require-fw s  abort before sending unless the handshake firmware string contains s");
     eprintln!("  info --from <f> [--usage <f>]  parse getprop/usage dumps (offline)");
     eprintln!("  usb <adb|rndis>         show USB-mode switch plan");
     eprintln!("  reboot [--hard]         show reboot plan (graceful / sysrq)");
@@ -67,6 +69,8 @@ fn main() {
                 exit(1);
             }
             let no_telemetry = args.iter().any(|a| a == "--no-telemetry");
+            let scan = !args.iter().any(|a| a == "--no-scan");
+            let require_fw = args.windows(2).find(|w| w[0] == "--require-fw").map(|w| w[1].clone());
             // Full enable: handshake + cmd_id scan — same plan the Web client uses.
             let plan = toolya_core::enable_plan();
             let goggles = match usb::Goggles::open(&plan.ports) {
@@ -78,7 +82,7 @@ fn main() {
                 println!("ADB is already enabled — connect directly: `adb devices`");
                 return;
             }
-            match goggles.run_enable(&plan, |msg| eprintln!("  {msg}")) {
+            match goggles.run_enable(&plan, scan, require_fw.as_deref(), |msg| eprintln!("  {msg}")) {
                 Ok(()) => {
                     println!("adb enable sent — wait ~5s, then `adb devices`");
                     telemetry::after_root(&serial, no_telemetry);
