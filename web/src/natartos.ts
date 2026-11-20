@@ -239,6 +239,12 @@ async function vendorRo(adb: Adb): Promise<void> {
   try { await run(adb, "sync; mount -o remount,ro /vendor"); } catch { /* best effort */ }
 }
 
+/** Shell command that kills every running `sh <injectPath>` loop (exact argv). */
+export function stopInjectCmd(injectPath: string): string {
+  return `for d in /proc/[0-9]*; do case "$(tr '\\0' ' ' < $d/cmdline 2>/dev/null)" in ` +
+    `"sh ${injectPath} "|"/system/bin/sh ${injectPath} ") kill -9 \${d#/proc/};; esac; done; true`;
+}
+
 /** Start mods on the device — runs inject.sh without reinstalling. */
 export async function startMods(
   adb: Adb,
@@ -260,6 +266,11 @@ export async function startMods(
   // previous session — a leftover fb_stop sends the overlay into a
   // cleanup→restart loop, so dji_glasses never settles with the mods up.
   await run(adb, `rm -f ${nc.log}`);
+  // Stop a still-running inject loop before dropping its pid file: older
+  // inject.sh versions only find their predecessor through that file, so a
+  // second start would run a second loop (two dji_glasses fighting over the
+  // display, restarting each other). Exact argv match only.
+  await run(adb, stopInjectCmd(injectPath));
   await run(
     adb,
     "rm -f /data/local/tmp/fb_stop /data/local/tmp/fb_override /data/local/tmp/natartos_restart /data/local/tmp/natartos_inject.pid",

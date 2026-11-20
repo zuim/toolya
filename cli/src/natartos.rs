@@ -1338,6 +1338,11 @@ fn cmd_start() {
 
     println!("Starting mods...");
     let _ = shell(&mut dev, "mkdir -p /data/local/tmp");
+    // Stop a still-running inject loop before dropping its pid file: older
+    // inject.sh versions only find their predecessor through that file, so a
+    // second start would run a second loop (two dji_glasses fighting over the
+    // display). Exact argv match only.
+    let _ = shell(&mut dev, &stop_inject_cmd(inject_path));
     let _ = shell(&mut dev, "rm -f /data/local/tmp/natartos_inject.log /data/local/tmp/natartos_inject.pid /data/local/tmp/natartos_menu.log /data/local/tmp/natartos.log");
     let _ = shell(&mut dev, "sync && echo 3 > /proc/sys/vm/drop_caches");
 
@@ -1596,4 +1601,13 @@ fn cmd_dump() {
     }
     println!("```");
     eprintln!("\nPaste this into a GitHub issue or Discord for support.");
+}
+
+/// Shell command that kills every running `sh <inject_path>` loop (exact argv).
+fn stop_inject_cmd(inject_path: &str) -> String {
+    format!(
+        "for d in /proc/[0-9]*; do case \"$(tr '\\0' ' ' < $d/cmdline 2>/dev/null)\" in \
+         \"sh {p} \"|\"/system/bin/sh {p} \") kill -9 ${{d#/proc/}};; esac; done; true",
+        p = inject_path
+    )
 }
