@@ -1072,13 +1072,23 @@ $("ep-stream").addEventListener("click", async () => {
   if (!adb) { log("eyepiece: connect ADB first"); return; }
   b.textContent = "Stop Eyepiece";
   $("ep-status").textContent = "starting…";
+  const metrics = ($("ep-metrics") as HTMLInputElement).checked;
+  const [resW, resH] = ($("ep-res") as HTMLSelectElement).value.split("x").map(Number);
+  $("ep-disp").hidden = !metrics;
+  $("ep-disp-val").textContent = metrics ? "display timing: waiting for the first report (every 3 s)…" : "";
   try {
     eyepiece = await startEyepiece({
       adb,
+      width: resW, height: resH,
       fps: parseInt(($("ep-fps") as HTMLSelectElement).value),
       bitrate: parseInt(($("ep-br") as HTMLSelectElement).value),
-      metrics: ($("ep-metrics") as HTMLInputElement).checked,
+      metrics,
       onLog: (l) => log(l),
+      onDisplayTiming: (t) => {
+        $("ep-disp-val").textContent =
+          `display timing: push→latch ${t.latchP50.toFixed(1)} / ${t.latchP95.toFixed(1)} ms (p50/p95, max ${t.latchMax.toFixed(1)})` +
+          ` · refresh interval ${t.intervalP50.toFixed(2)} / ${t.intervalP95.toFixed(2)} ms (max ${t.intervalMax.toFixed(1)}) · ${t.n} frames`;
+      },
       onStatus: (s) => {
         const f = (v: number) => Number.isFinite(v) ? v.toFixed(1) : "–";
         $("ep-status").textContent = "streaming";

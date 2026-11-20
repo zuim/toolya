@@ -23,9 +23,10 @@ export interface EyepieceOptions {
   fps: number;              // 60 / 100 (panel runs at 100 Hz)
   bitrate: number;          // bit/s
   gopSeconds?: number;      // keyframe interval (default 2 s)
-  metrics?: boolean;        // eyepiece_bridge -M: display push→latch timing in the log
-  width?: number; height?: number;   // output (goggles panel: 1920x1080)
+  metrics?: boolean;        // eyepiece_bridge -M: display timing, reported every 3 s (onDisplayTiming)
+  width?: number; height?: number;   // encoded size (panel: 1920x1080; smaller is scaled up on the goggles)
   onStatus?: (s: EyepieceStats) => void;
+  onDisplayTiming?: (t: DisplayTiming) => void;
   onLog?: (line: string) => void;
   onStop?: (reason: string) => void;
 }
@@ -38,6 +39,24 @@ export interface EyepieceStats {
   decodeP50: number;                                // ms, on the goggles
   dropped: number; encDropped: number;
   encoder: string;
+}
+
+// eyepiece_bridge -M (dispout.c), one line every 3 s, forwarded over the socket as EP_LOG:
+//   "dispout[M]: push→latch p50 A p95 B max C ms | refresh interval p50 D p95 E max F ms | n=N"
+// push→latch: decoded frame handed to the display → the panel refresh that starts showing it
+// (waiting for scan-out; 0–10 ms at 100 Hz, more if frames queue up). refresh interval: time
+// between two shown-frame changes (10 ms = a new frame on every 100 Hz refresh).
+export interface DisplayTiming {
+  latchP50: number; latchP95: number; latchMax: number;
+  intervalP50: number; intervalP95: number; intervalMax: number;
+  n: number;
+}
+const METRICS_RE = /^dispout\[M\]: push→latch p50 ([\d.]+) p95 ([\d.]+) max ([\d.]+) ms \| refresh interval p50 ([\d.]+) p95 ([\d.]+) max ([\d.]+) ms \| n=(\d+)/;
+export function parseDisplayTiming(line: string): DisplayTiming | null {
+  const m = METRICS_RE.exec(line);
+  if (!m) return null;
+  const v = m.slice(1).map(Number);
+  return { latchP50: v[0], latchP95: v[1], latchMax: v[2], intervalP50: v[3], intervalP95: v[4], intervalMax: v[5], n: v[6] };
 }
 
 export interface EyepieceHandle { readonly active: boolean; stop(reason?: string): Promise<void>; }
@@ -75,7 +94,7 @@ export async function startEyepiece(o: EyepieceOptions): Promise<EyepieceHandle>
     const c = { ...base, hardwareAcceleration: hw };
     if ((await VideoEncoder.isConfigSupported(c)).supported) { cfg = c; break; }
   }
-  if (!cfg) throw new Error("H.264 1080p realtime encoding not supported by this browser");
+  if (!cfg) throw new Error(`H.264 ${W}x${H} realtime encoding not supported by this browser`);
   const encName = `H.264 ${cfg.hardwareAcceleration === "prefer-hardware" ? "hardware" : "any"}`;
 
   // ---- capture (user picks screen/window) ----
@@ -93,7 +112,7 @@ export async function startEyepiece(o: EyepieceOptions): Promise<EyepieceHandle>
   }
   if (!bridge) { media.getTracks().forEach(t => t.stop()); throw new Error("eyepiece_bridge not found on the goggles (install natartos with the eyepiece mod)"); }
   await run(o.adb, `pid=$(pidof eyepiece_bridge); [ -n "$pid" ] && kill $pid; sleep 0.3; ` +
-    `nohup ${bridge} -1 ${o.metrics ? "-M" : ""} >/dev/null 2>&1 </dev/null &`);
+    `nohup ${bridge} -1 -b ${o.metrics ? "-M" : ""} >/dev/null 2>&1 </dev/null &`);
   let sock = null as Awaited<ReturnType<Adb["createSocket"]>> | null;
   for (let i = 0; i < 25 && !sock; i++) {
     await new Promise(r => setTimeout(r, 200));
@@ -136,7 +155,10 @@ export async function startEyepiece(o: EyepieceOptions): Promise<EyepieceHandle>
             st.dropped = pv.getUint32(36, true);
             if (offsetUs !== null) st.lat.push((tShown - offsetUs - pts) / 1000);
           } else if (type === EP_LOG) {
-            say("goggles: " + new TextDecoder().decode(p));
+            const line = new TextDecoder().decode(p);
+            const t = parseDisplayTiming(line);
+            if (t) o.onDisplayTiming?.(t);
+            say("goggles: " + line);
           } else if (type === EP_INFO && len >= 12) {
             say(`eyepiece: bridge v${pv.getUint32(0, true)}, decoder=${["none", "software", "hardware"][p[8]] ?? p[8]}`);
           }

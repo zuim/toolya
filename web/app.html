@@ -500,13 +500,24 @@ footer b{color:var(--fg);font-weight:600}
                     <option value="30000000">30 Mbit/s</option>
                   </select>
                 </label>
-                <label style="font-size:12px;display:flex;align-items:center;gap:6px">
-                  <input type="checkbox" id="ep-metrics"> display timing log
+                <label style="font-size:12px;display:flex;align-items:center;gap:6px" title="Encoded size. The goggles scale it up to the 1920x1080 panel. Lower = less encode/decode time (about 2-3 ms in total at 720p, of ~12 ms) but visibly softer text; keep 1080p for desktop work.">
+                  Resolution <select class="field" id="ep-res" style="width:auto">
+                    <option value="1920x1080" selected>1080p (native)</option>
+                    <option value="1280x720">720p</option>
+                    <option value="960x540">540p</option>
+                  </select>
+                </label>
+                <label style="font-size:12px;display:flex;align-items:center;gap:6px" title="The goggles measure when each decoded frame actually reaches the panel and report it here every 3 s (eyepiece_bridge -M). Applies when the stream starts.">
+                  <input type="checkbox" id="ep-metrics"> Show display timing (goggles)
                 </label>
               </div>
               <div class="row" style="justify-content:space-between;font-size:12px;color:var(--fg-dim)">
                 <span id="ep-stats"></span>
                 <button class="btn tonal" id="ep-stream" type="button" disabled>Start Eyepiece</button>
+              </div>
+              <div id="ep-disp" style="font-size:12px;color:var(--fg-dim)" hidden>
+                <span id="ep-disp-val"></span>
+                <div style="color:var(--muted)"><b>push→latch</b>: decoded frame handed to the display until the panel refresh that starts showing it (waiting for scan-out; 0–10 ms at 100 Hz). <b>refresh interval</b>: time between two new frames on the panel (10 ms = a new frame on every refresh; 20 ms steps = repeated frames).</div>
               </div>
               <p class="hint">Low-latency H.264: browser screen capture → WebCodecs hardware encoder → <code>eyepiece_bridge</code> on the goggles (hardware decode, direct scan-out). Needs the natartos <b>eyepiece</b> and <b>overlay</b> mods. Chromium only.</p>
             </div>
