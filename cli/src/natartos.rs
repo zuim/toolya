@@ -559,7 +559,7 @@ fn cmd_push(dir: &Path, files: &[&str], no_restart: bool) {
         .and_then(|m| m.files.iter().find(|a| a.file == "inject.sh"))
         .map(|a| a.device_path.as_str())
         .unwrap_or("/vendor/natartos/inject.sh");
-    let _ = shell(&mut dev, &format!("setsid sh {inject} </dev/null >/dev/null 2>&1 &"));
+    let _ = shell(&mut dev, &format!("setsid sh {inject} </dev/null >/dev/null 2>&1 & sleep 2"));
 
     println!("Waiting 8s for startup...");
     std::thread::sleep(std::time::Duration::from_secs(8));
@@ -1170,7 +1170,7 @@ fn cmd_install(confirmed: bool, local_dir: Option<&Path>, version: Option<&str>,
         .find(|a| a.file == "inject.sh")
         .map(|a| a.device_path.as_str())
         .unwrap_or("/vendor/natartos/inject.sh");
-    let _ = shell(&mut dev, &format!("setsid sh {inject_path} </dev/null >/dev/null 2>&1 &"));
+    let _ = shell(&mut dev, &format!("setsid sh {inject_path} </dev/null >/dev/null 2>&1 & sleep 2"));
 
     println!("\n=== natartos {} installed and activated ===", m.natartos_version);
     println!("Mods are running. After a reboot: toolya adb --yes && toolya natartos start");
@@ -1364,7 +1364,7 @@ fn cmd_start() {
     println!("Launching inject.sh...");
     let _ = shell(&mut dev, &format!(
         // setsid, not nohup: on zv902 fw 01.00.1600 a nohup'ed child dies with the adb shell
-        "setsid sh {inject_path} </dev/null >/dev/null 2>&1 &"
+        "setsid sh {inject_path} </dev/null >/dev/null 2>&1 & sleep 2"
     ));
 
     println!("Waiting 12s for dji_glasses startup...");
