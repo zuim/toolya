@@ -15,7 +15,8 @@ const PORT = 42420;
 const BRIDGES = ["/data/local/tmp/eyepiece/eyepiece_bridge", "/vendor/natartos/apps/eyepiece/eyepiece_bridge"];
 // message types (natartos mods/eyepiece/bridge/proto.h)
 const EP_VIDEO = 0x01, EP_PING = 0x02, EP_STREAM = 0x04;
-const EP_PONG = 0x82, EP_LOG = 0x83, EP_FRAME = 0x84, EP_INFO = 0x85;
+const EP_POSE = 0x81, EP_PONG = 0x82, EP_LOG = 0x83, EP_FRAME = 0x84, EP_INFO = 0x85;
+const EP_CTRL = 0x03, EP_OP_RECENTER = 1, EP_OP_HEADTRACK = 3;
 const EP_FLAG_KEY = 0x01;
 
 export interface EyepieceOptions {
@@ -24,6 +25,8 @@ export interface EyepieceOptions {
   bitrate: number;          // bit/s
   gopSeconds?: number;      // keyframe interval (default 2 s)
   metrics?: boolean;        // eyepiece_bridge -M: display timing, reported every 3 s (onDisplayTiming)
+  headTracking?: boolean;   // MCU head orientation (EP_POSE → onPose); off by default, setHeadTracking() later
+  onPose?: (p: Pose) => void;
   onStatus?: (s: EyepieceStats) => void;
   onDisplayTiming?: (t: DisplayTiming) => void;
   onLog?: (line: string) => void;
@@ -58,7 +61,16 @@ export function parseDisplayTiming(line: string): DisplayTiming | null {
   return { latchP50: v[0], latchP95: v[1], latchMax: v[2], intervalP50: v[3], intervalP95: v[4], intervalMax: v[5], n: v[6] };
 }
 
-export interface EyepieceHandle { readonly active: boolean; stop(reason?: string): Promise<void>; }
+// ep_pose_t: degrees, +yaw = right, +pitch = up, +roll = right ear down; yaw is relative to
+// the direction at start / last recenter (pitch and roll are gravity-referenced).
+export interface Pose { yaw: number; pitch: number; roll: number; tDevUs: number; }
+
+export interface EyepieceHandle {
+  readonly active: boolean;
+  stop(reason?: string): Promise<void>;
+  setHeadTracking(on: boolean): void;   // starts/stops the goggles' IMU stream
+  recenter(): void;
+}
 
 const pct = (v: number[], q: number) => {
   if (!v.length) return NaN;
@@ -156,7 +168,10 @@ export async function startEyepiece(o: EyepieceOptions): Promise<EyepieceHandle>
           if (buf.length < 8 + len) break;
           const type = buf[2], p = buf.subarray(8, 8 + len);
           const pv = new DataView(p.buffer, p.byteOffset, p.byteLength);
-          if (type === EP_PONG && len >= 16) {
+          if (type === EP_POSE && len >= 20) {
+            o.onPose?.({ tDevUs: Number(pv.getBigUint64(0, true)), yaw: pv.getFloat32(8, true),
+                         pitch: pv.getFloat32(12, true), roll: pv.getFloat32(16, true) });
+          } else if (type === EP_PONG && len >= 16) {
             const tPc = Number(pv.getBigUint64(0, true)), tDev = Number(pv.getBigUint64(8, true));
             const rtt = nowUs() - tPc;
             if (rtt < bestRtt) { bestRtt = rtt; offsetUs = tDev - (tPc + rtt / 2); }
@@ -190,6 +205,9 @@ export async function startEyepiece(o: EyepieceOptions): Promise<EyepieceHandle>
   { const b = new Uint8Array(8), dv = new DataView(b.buffer);
     dv.setUint16(0, W, true); dv.setUint16(2, H, true); b[4] = 0; b[5] = Math.min(255, fps);
     void send(msg(EP_STREAM, b)); }
+  const setHeadTracking = (on: boolean) => { if (running) void send(msg(EP_CTRL, new Uint8Array([EP_OP_HEADTRACK, on ? 1 : 0]))); };
+  const recenter = () => { if (running) void send(msg(EP_CTRL, new Uint8Array([EP_OP_RECENTER]))); };
+  if (o.headTracking) setHeadTracking(true);
 
   // ---- encoder ----
   const enc = new VideoEncoder({
@@ -276,5 +294,5 @@ export async function startEyepiece(o: EyepieceOptions): Promise<EyepieceHandle>
     o.onStop?.(reason);
   }
 
-  return { get active() { return running; }, stop };
+  return { get active() { return running; }, stop, setHeadTracking, recenter };
 }

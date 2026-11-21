@@ -1074,6 +1074,9 @@ $("ep-stream").addEventListener("click", async () => {
   $("ep-status").textContent = "starting…";
   const metrics = ($("ep-metrics") as HTMLInputElement).checked;
   $("ep-disp").hidden = !metrics;
+  let poseN = 0, poseT0 = performance.now(), poseShown = 0, poseHz = 0;
+  $("ep-pose").hidden = !($("ep-headtrack") as HTMLInputElement).checked;
+  $("ep-pose-val").textContent = "head tracking: waiting for the first sample…";
   $("ep-disp-val").textContent = metrics ? "display timing: waiting for the first report (every 3 s)…" : "";
   try {
     eyepiece = await startEyepiece({
@@ -1081,6 +1084,16 @@ $("ep-stream").addEventListener("click", async () => {
       fps: parseInt(($("ep-fps") as HTMLSelectElement).value),
       bitrate: parseInt(($("ep-br") as HTMLSelectElement).value),
       metrics,
+      headTracking: ($("ep-headtrack") as HTMLInputElement).checked,
+      onPose: (p) => {
+        poseN++;
+        const t = performance.now();
+        if (t - poseShown < 100) return;            // update the text at 10 Hz
+        poseShown = t;
+        if (t - poseT0 >= 1000) { poseHz = poseN * 1000 / (t - poseT0); poseN = 0; poseT0 = t; }
+        $("ep-pose-val").textContent =
+          `yaw ${p.yaw.toFixed(1)}°  pitch ${p.pitch.toFixed(1)}°  roll ${p.roll.toFixed(1)}°  · ${poseHz.toFixed(0)} Hz`;
+      },
       onLog: (l) => log(l),
       onDisplayTiming: (t) => {
         $("ep-disp-val").textContent =
@@ -1099,6 +1112,7 @@ $("ep-stream").addEventListener("click", async () => {
       onStop: (reason) => {
         log(`eyepiece: ${reason}`);
         $("ep-status").textContent = "stopped";
+        $("ep-pose").hidden = true;
         b.textContent = "Start Eyepiece";
         eyepiece = null;
       },
@@ -1109,6 +1123,15 @@ $("ep-stream").addEventListener("click", async () => {
     b.textContent = "Start Eyepiece";
   }
 });
+
+$("ep-headtrack").addEventListener("change", () => {
+  const on = ($("ep-headtrack") as HTMLInputElement).checked;
+  if (!eyepiece?.active) return;                    // applies at the next start
+  $("ep-pose").hidden = !on;
+  if (on) $("ep-pose-val").textContent = "head tracking: waiting for the first sample…";
+  eyepiece.setHeadTracking(on);
+});
+$("ep-recenter").addEventListener("click", () => eyepiece?.recenter());
 
 const psQuality = $("ps-quality") as HTMLInputElement;
 const psFpsSlider = $("ps-fps") as HTMLInputElement;
