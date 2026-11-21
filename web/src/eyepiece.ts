@@ -24,7 +24,6 @@ export interface EyepieceOptions {
   bitrate: number;          // bit/s
   gopSeconds?: number;      // keyframe interval (default 2 s)
   metrics?: boolean;        // eyepiece_bridge -M: display timing, reported every 3 s (onDisplayTiming)
-  width?: number; height?: number;   // encoded size (panel: 1920x1080; smaller is scaled up on the goggles)
   onStatus?: (s: EyepieceStats) => void;
   onDisplayTiming?: (t: DisplayTiming) => void;
   onLog?: (line: string) => void;
@@ -78,7 +77,9 @@ function msg(type: number, payload: Uint8Array, flags = 0): Uint8Array {
 }
 
 export async function startEyepiece(o: EyepieceOptions): Promise<EyepieceHandle> {
-  const W = o.width ?? 1920, H = o.height ?? 1080, fps = o.fps;
+  // always the panel size: the goggles have no scaler (a smaller stream would be a small
+  // picture in the middle); the capture is scaled to fit on the PC (canvas below)
+  const W = 1920, H = 1080, fps = o.fps;
   const gop = Math.max(1, Math.round((o.gopSeconds ?? 2) * fps));
   const say = (s: string) => o.onLog?.(s);
 
@@ -111,8 +112,18 @@ export async function startEyepiece(o: EyepieceOptions): Promise<EyepieceHandle>
     if ((await run(o.adb, `[ -x ${p} ] && echo y || echo n`)).includes("y")) { bridge = p; break; }
   }
   if (!bridge) { media.getTracks().forEach(t => t.stop()); throw new Error("eyepiece_bridge not found on the goggles (install natartos with the eyepiece mod)"); }
-  await run(o.adb, `pid=$(pidof eyepiece_bridge); [ -n "$pid" ] && kill $pid; sleep 0.3; ` +
-    `nohup ${bridge} -1 -b ${o.metrics ? "-M" : ""} >/dev/null 2>&1 </dev/null &`);
+  // A bridge that is already running (menu launch, earlier session) gets SIGTERM (bridge and
+  // head-tracking helper both shut down cleanly on it) and we wait until it is gone and the
+  // overlay has handed the display back (fb_cleanup). Bridges before v0.1.0-eyepiece.3 don't
+  // take over by themselves: a second one fails on the port and deletes the first one's
+  // fb_override.
+  await run(o.adb, `p=$(pidof eyepiece_bridge); if [ -n "$p" ]; then kill $p; ` +
+    `i=0; while pidof eyepiece_bridge >/dev/null && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done; ` +
+    `sleep 0.3; i=0; while [ -e /data/local/tmp/fb_cleanup ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; fi`);
+  // setsid, not nohup: this runs over the legacy `shell:` service, and when that shell exits
+  // adbd kills its background children, nohup'ed or not, so the bridge never started. The
+  // trailing sleep lets setsid detach before the shell exits (same as inject.sh in natartos.ts).
+  await run(o.adb, `setsid ${bridge} -1 -b ${o.metrics ? "-M" : ""} >/dev/null 2>&1 </dev/null & sleep 1`);
   let sock = null as Awaited<ReturnType<Adb["createSocket"]>> | null;
   for (let i = 0; i < 25 && !sock; i++) {
     await new Promise(r => setTimeout(r, 200));
