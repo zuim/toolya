@@ -511,8 +511,9 @@ footer b{color:var(--fg);font-weight:600}
                 <span id="ep-stats"></span>
                 <button class="btn tonal" id="ep-stream" type="button" disabled>Start Eyepiece</button>
               </div>
-              <div id="ep-pose" class="row" style="font-size:12px;color:var(--fg-dim);justify-content:space-between" hidden>
-                <span id="ep-pose-val">head tracking: waiting for the first sample…</span>
+              <div id="ep-pose" class="row" style="font-size:12px;color:var(--fg-dim);justify-content:space-between;align-items:center" hidden>
+                <canvas id="ep-pose-gfx" style="width:160px;height:110px" title="Head pose, seen from behind: the arrow is where you look"></canvas>
+                <span id="ep-pose-val">waiting for the first sample…</span>
                 <button class="btn tonal" id="ep-recenter" type="button" title="Make the current head direction yaw 0">Recenter</button>
               </div>
               <div id="ep-disp" style="font-size:12px;color:var(--fg-dim)" hidden>

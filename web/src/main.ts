@@ -9,6 +9,7 @@ import { toScreenJpeg, previewInto, bgraToCanvas } from "./image";
 import { startStream, type StreamHandle } from "./stream";
 import { startPcStream, type PcStreamHandle } from "./pc-stream";
 import { startEyepiece, type EyepieceHandle } from "./eyepiece";
+import { PoseView } from "./posegfx";
 import { sendKey, holdKey } from "./input";
 import type { Adb } from "@yume-chan/adb";
 
@@ -1065,6 +1066,7 @@ function startTerminal(adb: Adb) {
 // --- PC Stream (browser → goggles over USB/ADB) ---
 let pcStream: PcStreamHandle | null = null;
 let eyepiece: EyepieceHandle | null = null;
+const poseView = new PoseView($("ep-pose-gfx") as HTMLCanvasElement);
 
 $("ep-stream").addEventListener("click", async () => {
   const b = $("ep-stream") as HTMLButtonElement;
@@ -1076,7 +1078,8 @@ $("ep-stream").addEventListener("click", async () => {
   $("ep-disp").hidden = !metrics;
   let poseN = 0, poseT0 = performance.now(), poseShown = 0, poseHz = 0;
   $("ep-pose").hidden = !($("ep-headtrack") as HTMLInputElement).checked;
-  $("ep-pose-val").textContent = "head tracking: waiting for the first sample…";
+  $("ep-pose-val").textContent = "waiting for the first sample…";
+  poseView.reset();
   $("ep-disp-val").textContent = metrics ? "display timing: waiting for the first report (every 3 s)…" : "";
   try {
     eyepiece = await startEyepiece({
@@ -1086,13 +1089,15 @@ $("ep-stream").addEventListener("click", async () => {
       metrics,
       headTracking: ($("ep-headtrack") as HTMLInputElement).checked,
       onPose: (p) => {
+        poseView.set(p.yaw, p.pitch, p.roll);     // drawn once per animation frame
         poseN++;
         const t = performance.now();
         if (t - poseShown < 100) return;            // update the text at 10 Hz
         poseShown = t;
         if (t - poseT0 >= 1000) { poseHz = poseN * 1000 / (t - poseT0); poseN = 0; poseT0 = t; }
-        $("ep-pose-val").textContent =
-          `yaw ${p.yaw.toFixed(1)}°  pitch ${p.pitch.toFixed(1)}°  roll ${p.roll.toFixed(1)}°  · ${poseHz.toFixed(0)} Hz`;
+        $("ep-pose-val").textContent = `head tracking · ${poseHz.toFixed(0)} Hz`;
+        $("ep-pose-gfx").title =
+          `yaw ${p.yaw.toFixed(1)}°  pitch ${p.pitch.toFixed(1)}°  roll ${p.roll.toFixed(1)}° (seen from behind: the arrow is where you look)`;
       },
       onLog: (l) => log(l),
       onDisplayTiming: (t) => {
@@ -1128,7 +1133,7 @@ $("ep-headtrack").addEventListener("change", () => {
   const on = ($("ep-headtrack") as HTMLInputElement).checked;
   if (!eyepiece?.active) return;                    // applies at the next start
   $("ep-pose").hidden = !on;
-  if (on) $("ep-pose-val").textContent = "head tracking: waiting for the first sample…";
+  if (on) { $("ep-pose-val").textContent = "waiting for the first sample…"; poseView.reset(); }
   eyepiece.setHeadTracking(on);
 });
 $("ep-recenter").addEventListener("click", () => eyepiece?.recenter());
