@@ -123,7 +123,7 @@ export async function startEyepiece(o: EyepieceOptions): Promise<EyepieceHandle>
   for (const p of BRIDGES) {
     if ((await run(o.adb, `[ -x ${p} ] && echo y || echo n`)).includes("y")) { bridge = p; break; }
   }
-  if (!bridge) { media.getTracks().forEach(t => t.stop()); throw new Error("eyepiece_bridge not found on the goggles (install natartos with the eyepiece mod)"); }
+  if (!bridge) { media.getTracks().forEach(t => t.stop()); throw new Error("eyepiece_bridge not found on the goggles (install natartos with the zuim_eyepiece mod)"); }
   // A bridge that is already running (menu launch, earlier session) gets SIGTERM (bridge and
   // head-tracking helper both shut down cleanly on it) and we wait until it is gone and the
   // overlay has handed the display back (fb_cleanup). Bridges before v0.1.0-eyepiece.3 don't
