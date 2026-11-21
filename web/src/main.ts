@@ -1073,13 +1073,11 @@ $("ep-stream").addEventListener("click", async () => {
   b.textContent = "Stop Eyepiece";
   $("ep-status").textContent = "starting…";
   const metrics = ($("ep-metrics") as HTMLInputElement).checked;
-  const [resW, resH] = ($("ep-res") as HTMLSelectElement).value.split("x").map(Number);
   $("ep-disp").hidden = !metrics;
   $("ep-disp-val").textContent = metrics ? "display timing: waiting for the first report (every 3 s)…" : "";
   try {
     eyepiece = await startEyepiece({
       adb,
-      width: resW, height: resH,
       fps: parseInt(($("ep-fps") as HTMLSelectElement).value),
       bitrate: parseInt(($("ep-br") as HTMLSelectElement).value),
       metrics,

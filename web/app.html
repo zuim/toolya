@@ -500,15 +500,8 @@ footer b{color:var(--fg);font-weight:600}
                     <option value="30000000">30 Mbit/s</option>
                   </select>
                 </label>
-                <label style="font-size:12px;display:flex;align-items:center;gap:6px" title="Encoded size. The goggles have no scaler: smaller sizes are shown 1:1 in the centre of the 1920x1080 panel (smaller picture, black border). Lower = less encode/decode time (about 3 ms less at 720p, of ~12 ms).">
-                  Resolution <select class="field" id="ep-res" style="width:auto">
-                    <option value="1920x1080" selected>1080p (native)</option>
-                    <option value="1280x720">720p (smaller, faster)</option>
-                    <option value="960x540">540p (smaller, faster)</option>
-                  </select>
-                </label>
-                <label style="font-size:12px;display:flex;align-items:center;gap:6px" title="The goggles measure when each decoded frame actually reaches the panel and report it here every 3 s (eyepiece_bridge -M). Applies when the stream starts.">
-                  <input type="checkbox" id="ep-metrics"> Show display timing (goggles)
+                <label style="font-size:12px;display:flex;align-items:center;gap:6px" title="Diagnostics: the goggles measure when each decoded frame actually reaches the panel and report it every 3 s; the numbers appear on this page under the Start button, nothing is shown in the goggles (eyepiece_bridge -M). Applies when the stream starts.">
+                  <input type="checkbox" id="ep-metrics"> Measure display timing (shown here)
                 </label>
               </div>
               <div class="row" style="justify-content:space-between;font-size:12px;color:var(--fg-dim)">
